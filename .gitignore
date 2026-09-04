@@ -1,0 +1,9 @@
+.env
+fabric-config/*
+!fabric-config/.env.example
+youtube-cookies.txt
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.bak*

@@ -1,0 +1,81 @@
+# yt-telegram-analyser — sidecars for the n8n "YoutubeAnalyser" workflow.
+#
+#   docker compose up -d --build                 # yt-transcript + yt-research + fabric
+#   docker compose --profile n8n up -d --build   # ...plus a bundled n8n instance
+#
+# If you already run n8n, skip the profile and put your n8n container on the
+# `yt-analyser` network (see README, step 6) so it can reach the sidecars by
+# service name.
+
+services:
+  yt-transcript:
+    build: ./yt-transcript
+    restart: unless-stopped
+    environment:
+      - SEARCHAPI_KEY=${SEARCHAPI_KEY:-}
+      - COOKIE_PATH=/cookies/youtube-cookies.txt
+    # Optional: a Netscape-format cookies file exported from a logged-in
+    # YouTube session helps against "confirm you're not a bot" walls.
+    # volumes:
+    #   - ./youtube-cookies.txt:/cookies/youtube-cookies.txt:ro
+    networks: [yt-analyser]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+
+  yt-research:
+    build: ./yt-research
+    restart: unless-stopped
+    init: true
+    environment:
+      - YT_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - CODEX_MODEL=${CODEX_MODEL:-gpt-5.4}
+      - CODEX_REASONING_EFFORT=${CODEX_REASONING_EFFORT:-medium}
+      - CODEX_TIMEOUT_S=${CODEX_TIMEOUT_S:-600}
+    volumes:
+      - codex-auth:/home/node/.codex
+    networks: [yt-analyser]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+
+  fabric:
+    image: ghcr.io/ksylvan/fabric:v1.4.397
+    restart: unless-stopped
+    command: ["fabric", "--serve"]
+    volumes:
+      - ./fabric-config:/root/.config/fabric
+    networks: [yt-analyser]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+
+  n8n:
+    profiles: [n8n]
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      - GENERIC_TIMEZONE=${TZ:-UTC}
+      - N8N_RUNNERS_ENABLED=true
+    volumes:
+      - n8n-data:/home/node/.n8n
+    networks: [yt-analyser]
+
+volumes:
+  codex-auth:
+  n8n-data:
+
+networks:
+  yt-analyser:
+    name: yt-analyser

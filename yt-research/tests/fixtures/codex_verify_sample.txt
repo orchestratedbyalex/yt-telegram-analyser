@@ -1,0 +1,38 @@
+Reading additional input from stdin...
+OpenAI Codex v0.118.0 (research preview)
+--------
+workdir: /tmp
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: none
+reasoning summaries: none
+session id: 00000000-0000-0000-0000-000000000000
+--------
+user
+You are an independent fact-checker. Output two short sections:
+
+## Independent Take
+- One bullet about Python (cite a URL).
+
+## Bottom Line
+One sentence on whether Python is popular. Cite a URL.
+
+Use web search. Be terse. No preamble.
+warning: Codex could not find system bubblewrap on PATH. Please install bubblewrap with your package manager. Codex will use the vendored bubblewrap in the meantime.
+web search: 
+web search: Python popularity TIOBE index 2026 Python official or tiobe
+codex
+## Independent Take
+- Python ranks `#1` in the TIOBE Programming Community Index as of January 2026. https://www.tiobe.com/tiobe-index/
+
+## Bottom Line
+Yes, Python is clearly popular: it tops TIOBE’s January 2026 index. https://www.tiobe.com/tiobe-index/
+tokens used
+22,388
+## Independent Take
+- Python ranks `#1` in the TIOBE Programming Community Index as of January 2026. https://www.tiobe.com/tiobe-index/
+
+## Bottom Line
+Yes, Python is clearly popular: it tops TIOBE’s January 2026 index. https://www.tiobe.com/tiobe-index/

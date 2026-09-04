@@ -1,0 +1,970 @@
+{
+  "name": "YoutubeAnalyser",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        -704,
+        -400
+      ],
+      "id": "db82335f-1af5-49d9-bdff-63b7ed56e6f5",
+      "name": "Trigger: Telegram",
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- Inline button taps (callback_query) → same research path as typed /verify, /roadmap ---\nconst cq = $json.callback_query;\nif (cq) {\n  const cqChatId = cq.message?.chat?.id;\n  const m = (cq.data || '').match(/^(verify|roadmap):([a-z0-9]{8})$/);\n  if (!m || !cqChatId) {\n    return [{ json: { chatId: cqChatId, callbackQueryId: cq.id, error: 'Unknown button.' } }];\n  }\n  return [{ json: {\n    chatId: cqChatId,\n    messageId: cq.message?.message_id,\n    callbackQueryId: cq.id,\n    _research_command: m[1],\n    _research_text: '/' + m[1],\n    _research_reply_text: 'id:' + m[2],\n  }}];\n}\n\nconst text = $json.message?.text ?? '';\nconst chatId = $json.message?.chat?.id;\nconst messageId = $json.message?.message_id;\n\nif (!chatId) {\n  return [{ json: { error: 'No chatId found in Telegram payload.' } }];\n}\n\n// --- NEW: research commands (/verify, /roadmap) bypass URL extraction ---\nconst researchMatch = text.match(/^\\/(verify|roadmap)\\b/i);\nif (researchMatch) {\n  return [{ json: {\n    chatId,\n    messageId,\n    _research_command: researchMatch[1].toLowerCase(),\n    _research_text: text,\n    _research_reply_text: $json.message?.reply_to_message?.text || '',\n  }}];\n}\n\n// --- existing /commands help ---\nif (text.trim().toLowerCase() === '/commands') {\n  return [{ json: { chatId, helpText: '<b>Available commands</b>\\n\\n' +\n    '/summary &lt;url&gt; — Video summary (default)\\n' +\n    '/wisdom &lt;url&gt; — Key insights, quotes &amp; ideas\\n' +\n    '/chapters &lt;url&gt; — Timestamped chapter markers\\n' +\n    '/claims &lt;url&gt; — Fact-check claims in the video\\n' +\n    '/song &lt;url&gt; — Song meaning analysis\\n' +\n    '/verify (reply) — Codex web fact-check + second opinion\\n' +\n    '/roadmap (reply or URL) — Codex learning roadmap\\n' +\n    '/commands — Show this help\\n\\n' +\n    '<b>Language flag</b> (optional):\\n' +\n    'Add <code>-xx</code> after the command for non-English videos.\\n' +\n    'Example: <code>/summary -es https://...</code>\\n' +\n    'Common: -es -de -fr -pt -it -nl -ja -ko -zh' } }];\n}\n\nconst commands = {\n  '/summary':  { pattern: 'youtube_summary',       label: 'Summary',         timestamps: false },\n  '/wisdom':   { pattern: 'extract_wisdom',         label: 'Wisdom',          timestamps: false },\n  '/chapters': { pattern: 'create_video_chapters',  label: 'Video Chapters',  timestamps: true  },\n  '/claims':   { pattern: 'analyze_claims',          label: 'Claim Analysis',  timestamps: false },\n  '/song':     { pattern: 'extract_song_meaning',   label: 'Song Meaning',    timestamps: false },\n};\n\n// Parse: /command [-lang] <url>\nconst cmdMatch = text.match(/^\\/\\w+/);\nlet pattern = 'youtube_summary';\nlet label = 'Summary';\nlet transcriptFlag = '--transcript';\nlet lang = '';\n\nif (cmdMatch && commands[cmdMatch[0].toLowerCase()]) {\n  const cmd = commands[cmdMatch[0].toLowerCase()];\n  pattern = cmd.pattern;\n  label = cmd.label;\n  transcriptFlag = cmd.timestamps ? '--transcript-with-timestamps' : '--transcript';\n}\n\n// Check for language flag: -xx\nconst langMatch = text.match(/\\s-([a-zA-Z]{2}(?:-[a-zA-Z]{2,3})?)\\s/);\nif (langMatch) lang = langMatch[1];\n\n// Extract URL\nconst urlMatch = text.match(/(https?:\\/\\/(?:www\\.)?(?:youtube\\.com|youtu\\.be|m\\.youtube\\.com)\\/\\S+)/);\nif (!urlMatch) {\n  return [{ json: { chatId, error: 'No YouTube URL found. Try: <code>/commands</code>' } }];\n}\n\nreturn [{ json: { chatId, youtubeUrl: urlMatch[1], pattern, label, transcriptFlag, lang } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        -400
+      ],
+      "id": "7709d46e-1dd8-487d-bda5-a9c9dd5e6934",
+      "name": "Code: Extract URL"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set_url",
+              "name": "youtubeUrl",
+              "value": "={{$json.youtubeUrl}}",
+              "type": "string"
+            },
+            {
+              "id": "set_pattern",
+              "name": "pattern",
+              "value": "={{$json.pattern}}",
+              "type": "string"
+            },
+            {
+              "id": "set_chatId",
+              "name": "chatId",
+              "value": "={{$json.chatId}}",
+              "type": "number"
+            },
+            {
+              "id": "set_tflag",
+              "name": "transcriptFlag",
+              "value": "={{$json.transcriptFlag}}",
+              "type": "string"
+            },
+            {
+              "id": "set_label",
+              "name": "label",
+              "value": "={{$json.label}}",
+              "type": "string"
+            },
+            {
+              "id": "set_lang",
+              "name": "lang",
+              "value": "={{$json.lang}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -160,
+        -400
+      ],
+      "id": "7fe2a175-8048-4dd2-a1c6-6eb248e733be",
+      "name": "Params: YouTube"
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}\n",
+        "text": "={{$json.chunk}}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        -496
+      ],
+      "id": "a6d56b77-317d-4950-afc3-b0cad9bf2447",
+      "name": "Telegram: Reply (summary)",
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "url-error-check",
+              "leftValue": "={{$json.error}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "help-check",
+              "leftValue": "={{$json.helpText}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -340,
+        -400
+      ],
+      "id": "gate-url-validation",
+      "name": "If: URL Error?"
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{ $json.error || $json.helpText }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -340,
+        -220
+      ],
+      "id": "telegram-url-error",
+      "name": "Telegram: URL Error",
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{\"Processing: <b>\" + $json.label + \"</b>\" + ($json.lang ? \" (\" + $json.lang + \")\" : \"\") + \"\\nThis may take 30-60 seconds...\"}}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -60,
+        -540
+      ],
+      "id": "telegram-status-msg",
+      "name": "Telegram: Processing",
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://yt-transcript:8000/transcript",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $node[\"Params: YouTube\"].json.youtubeUrl, language: $node[\"Params: YouTube\"].json.lang || \"en\", with_timestamps: $node[\"Params: YouTube\"].json.pattern === \"create_video_chapters\" }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        -400
+      ],
+      "id": "http-fetch-transcript",
+      "name": "HTTP: Fetch Transcript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "status-check",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 400,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        -400
+      ],
+      "id": "if-transcript-error",
+      "name": "If: Transcript Error?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const chatId = $node[\"Trigger: Telegram\"].json.message.chat.id;\nconst url = $node[\"Params: YouTube\"].json.youtubeUrl || '(unknown)';\nconst lang = $node[\"Params: YouTube\"].json.lang || '';\nconst statusCode = $json.statusCode || 0;\nconst body = $json.body || {};\nconst detail = body.detail || 'Unknown error';\n\nconst esc = (s = '') => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nlet text;\nif (statusCode === 404 || detail.includes('No captions') || detail.includes('disabled') || detail.includes('unavailable')) {\n  text = '\\u26a0\\ufe0f <b>No subtitles available</b>\\n\\n' +\n    '<b>URL:</b> ' + esc(url) + '\\n' +\n    (lang ? '<b>Language:</b> ' + esc(lang) + '\\n' : '') +\n    '\\nThis video has no subtitles or auto-captions.';\n} else if (statusCode === 429 || detail.includes('rate limit')) {\n  text = '\\u23f3 <b>YouTube rate limited</b>\\n\\n' +\n    '<b>URL:</b> ' + esc(url) + '\\n' +\n    '\\nTry again in a few minutes.';\n} else {\n  text = '\\u274c <b>Transcript fetch failed</b>\\n\\n' +\n    '<b>URL:</b> ' + esc(url) + '\\n' +\n    '<b>Error:</b> ' + esc(detail);\n}\n\nreturn [{ json: { chatId, text } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -220
+      ],
+      "id": "code-transcript-error",
+      "name": "Code: Transcript Error"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        -220
+      ],
+      "id": "telegram-transcript-error",
+      "name": "Telegram: Transcript Error",
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://fabric:8080/chat",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompts: [{ userInput: $json.body.transcript, patternName: $node[\"Params: YouTube\"].json.pattern }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        448,
+        -496
+      ],
+      "id": "http-fabric-chat",
+      "name": "HTTP: Fabric Chat"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check for Fabric HTTP error\nif ($json.statusCode >= 400) {\n  return [{ json: { result: '', usage: {}, fabricError: 'Fabric returned HTTP ' + $json.statusCode } }];\n}\n\nconst raw = ($json.data || $json.body || '').toString();\n\n// Parse SSE response\nconst lines = raw.split('\\n').filter(l => l.startsWith('data: '));\nlet content = '';\nlet usage = {};\n\nfor (const line of lines) {\n  try {\n    const obj = JSON.parse(line.slice(6));\n    if (obj.type === 'content') content += obj.content;\n    if (obj.type === 'usage') usage = obj.usage || {};\n  } catch (e) {\n    // skip unparseable lines\n  }\n}\n\nif (!content) {\n  return [{ json: { result: '', usage, fabricError: 'AI returned empty response' } }];\n}\n\nreturn [{ json: { result: content, usage } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        -496
+      ],
+      "id": "code-parse-sse",
+      "name": "Code: Parse SSE"
+    },
+    {
+      "parameters": {
+        "jsCode": "const chatId = $node[\"Trigger: Telegram\"].json.message.chat.id;\nconst label = $node[\"Params: YouTube\"].json.label || 'Summary';\nconst youtubeUrl = $node[\"Params: YouTube\"].json.youtubeUrl || '';\n\n// Handle Fabric errors -- preserve existing behavior\nif ($json.fabricError) {\n  return [{ json: { chatId, chunk: '❌ <b>AI analysis failed</b>\\n\\n' + $json.fabricError } }];\n}\n\nlet text = ($json.result ?? '').toString();\nconst rawAnalysis = text;  // pre-HTML, pre-strip -- this is what /verify will fact-check\n\n// Remove ANSI colors\ntext = text.replace(/\\x1b\\[[0-9;]*m/g, '');\n// Remove markdown bold\ntext = text.replace(/\\*\\*/g, '');\n// Escape HTML\ntext = text\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .trim();\n\nif (!text) {\n  return [{ json: { chatId, chunk: '<b>' + label + '</b>\\n\\nNo content was returned.' } }];\n}\n\n// --- NEW: generate session id and persist for /verify and /roadmap lookup ---\nconst sessionId = Math.random().toString(36).slice(2, 10);\nconst TTL_MS = 7 * 86400 * 1000;\nconst CAP = 100;\nconst data = $getWorkflowStaticData('global');\nif (typeof data.sessions !== 'object' || data.sessions === null) {\n  data.sessions = {};\n}\ndata.sessions[sessionId] = {\n  video_url: youtubeUrl,\n  gemini_analysis: rawAnalysis,\n  created_at: Date.now(),\n};\n// Cleanup: TTL + hard cap\nfor (const [k, v] of Object.entries(data.sessions)) {\n  if (!v || !v.created_at || Date.now() - v.created_at > TTL_MS) {\n    delete data.sessions[k];\n  }\n}\nconst entries = Object.entries(data.sessions).sort((a, b) => b[1].created_at - a[1].created_at);\nif (entries.length > CAP) {\n  data.sessions = Object.fromEntries(entries.slice(0, CAP));\n}\n\n// Token usage\nconst usage = $json.usage || {};\nconst inTokens = usage.input_tokens || 0;\nconst outTokens = usage.output_tokens || 0;\n\n// Cost calc (Gemini 2.5 Pro pricing)\nconst inCost = (inTokens / 1_000_000) * 1.25;\nconst outCost = (outTokens / 1_000_000) * 10.00;\nconst totalCost = inCost + outCost;\n\nconst fmtTokens = (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n);\nconst costFooter = (inTokens || outTokens)\n  ? `\\n\\n<i>~${fmtTokens(inTokens)} in / ~${fmtTokens(outTokens)} out | est. $${totalCost.toFixed(4)}</i>`\n  : '';\n\n// --- NEW: session footer goes on EVERY chunk so user can reply to any of them ---\nconst sessionFooter = `\\n\\n<i>─── /verify · /roadmap · id:${sessionId}</i>`;\n\nconst max = 3300;  // a bit smaller to fit both footers comfortably\nconst chunks = [];\nfor (let i = 0; i < text.length; i += max) chunks.push(text.slice(i, i + max));\n\nreturn chunks.map((chunk, idx) => ({\n  json: {\n    chatId,\n    sessionId,\n    isLast: idx === chunks.length - 1,\n    chunk: (idx === 0 ? `<b>${label}</b>\\n\\n` : '') +\n           (chunks.length > 1 ? `Part ${idx + 1}/${chunks.length}\\n\\n` : '') +\n           chunk +\n           (idx === chunks.length - 1 ? costFooter : '') +\n           sessionFooter,\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -496
+      ],
+      "id": "b4e71451-2c2e-427a-8ce9-379baefe0096",
+      "name": "Code: Chunk for Telegram"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "research-cmd-check",
+              "leftValue": "={{$json._research_command}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-research-cmd",
+      "name": "If: Research Command?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $json._research_text || '';\nconst replyText = $json._research_reply_text || '';\nconst chatId = $json.chatId;\nconst messageId = $json.messageId;\nconst command = $json._research_command;\n\n// Extract URL from message (for /roadmap fresh URL)\nconst urlMatch = text.match(/(https?:\\/\\/(?:www\\.)?(?:youtube\\.com|youtu\\.be|m\\.youtube\\.com)\\/\\S+)/);\n\n// Branch A: /roadmap with fresh URL\nif (command === 'roadmap' && urlMatch) {\n  return [{ json: {\n    command,\n    chatId,\n    messageId,\n    via: 'fresh_url',\n    video_url: urlMatch[1],\n    gemini_analysis: '',\n  }}];\n}\n\n// Branch B: reply-to with session id\nconst idMatch = replyText.match(/id:([a-z0-9]{8})/);\nif (!idMatch) {\n  const hint = command === 'verify'\n    ? 'Reply to one of my analysis messages to use /verify.'\n    : 'Reply to an analysis message, or pass a URL: <code>/roadmap https://youtu.be/...</code>';\n  return [{ json: {\n    _error_msg: hint,\n    chatId,\n    messageId,\n  }}];\n}\n\n// Activity-driven cleanup on every read\nconst TTL_MS = 7 * 86400 * 1000;\nconst data = $getWorkflowStaticData('global');\nif (typeof data.sessions !== 'object' || data.sessions === null) data.sessions = {};\nfor (const [k, v] of Object.entries(data.sessions)) {\n  if (!v || !v.created_at || Date.now() - v.created_at > TTL_MS) delete data.sessions[k];\n}\n\nconst session = data.sessions[idMatch[1]];\nif (!session) {\n  return [{ json: {\n    _error_msg: 'That analysis is older than 7 days. Run /summary again to start fresh.',\n    chatId,\n    messageId,\n  }}];\n}\n\nreturn [{ json: {\n  command,\n  chatId,\n  messageId,\n  via: 'reply',\n  video_url: session.video_url,\n  gemini_analysis: session.gemini_analysis || '',\n}}];\n"
+      },
+      "id": "code-resolve-session",
+      "name": "Code: Resolve Session",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "resolve-error-check",
+              "leftValue": "={{$json._error_msg}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-resolve-error",
+      "name": "If: Resolve Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        40,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json._error_msg}}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "reply_to_message_id": "={{$json.messageId}}"
+        }
+      },
+      "id": "tg-resolve-error",
+      "name": "Telegram: Resolve Error",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        -200
+      ],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "🔍 Researching with Codex... will reply in ~1 min.",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "reply_to_message_id": "={{$json.messageId}}"
+        }
+      },
+      "id": "tg-ack-research",
+      "name": "Telegram: Ack Research",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://yt-transcript:8000/transcript",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": \"{{$('Code: Resolve Session').first().json.video_url}}\",\n  \"language\": \"en\",\n  \"with_timestamps\": false\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "http-refetch-transcript",
+      "name": "HTTP: Re-fetch Transcript",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://yt-research:8000/{{ $('Code: Resolve Session').first().json.command }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"transcript\": {{JSON.stringify($json.transcript)}},\n  \"gemini_analysis\": {{JSON.stringify($('Code: Resolve Session').first().json.gemini_analysis || '')}},\n  \"video_url\": {{JSON.stringify($('Code: Resolve Session').first().json.video_url)}},\n  \"video_id\": {{JSON.stringify($json.video_id || 'unknown')}},\n  \"progress_chat_id\": {{ JSON.stringify((($('Telegram: Ack Research').first().json.result ?? $('Telegram: Ack Research').first().json).chat?.id ?? null)) }},\n  \"progress_message_id\": {{ JSON.stringify((($('Telegram: Ack Research').first().json.result ?? $('Telegram: Ack Research').first().json).message_id ?? null)) }}\n}",
+        "options": {
+          "timeout": 660000
+        }
+      },
+      "id": "http-call-yt-research",
+      "name": "HTTP: Call yt-research",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\nconst md = (r.markdown || '').toString().trim();\nconst tokens = r.tokens_used || 0;\nconst model = r.model || 'gpt';\nconst resolved = $('Code: Resolve Session').first().json;\nconst command = resolved.command;\nconst chatId = resolved.chatId;\nconst replyToMessageId = resolved.messageId;\n\nconst labelMap = { verify: '🔍 Verify', roadmap: '🗺️ Roadmap' };\nconst label = labelMap[command] || command;\n\n// Minimal Markdown -> HTML for Telegram\nfunction md2html(s) {\n  // Escape HTML first\n  s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n  // ## headers -> <b>...</b>\n  s = s.replace(/^##\\s+(.+)$/gm, '<b>$1</b>');\n  s = s.replace(/^#\\s+(.+)$/gm, '<b>$1</b>');\n  // **bold** -> <b>bold</b>\n  s = s.replace(/\\*\\*([^*\\n]+)\\*\\*/g, '<b>$1</b>');\n  return s;\n}\n\nconst text = md2html(md);\n\nconst fmtTokens = (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n);\nconst searches = r.searches || 0;\nconst footer = `\\n\\n<i>─── via ${model} · ${fmtTokens(tokens)} tokens${searches ? ' · ' + searches + ' searches' : ''}</i>`;\nconst max = 3400;\n// Split on line boundaries: md2html only emits single-line tags, so a cut at\n// \"\\n\" can never leave a <b> open (a fixed-width cut did, and Telegram rejects it).\nconst chunks = [];\nlet rest = text;\nwhile (rest.length > max) {\n  let cut = rest.lastIndexOf('\\n\\n', max);\n  if (cut < max * 0.5) cut = rest.lastIndexOf('\\n', max);\n  if (cut < max * 0.5) cut = max;\n  chunks.push(rest.slice(0, cut).trimEnd());\n  rest = rest.slice(cut).replace(/^\\n+/, '');\n}\nchunks.push(rest);\n\nreturn chunks.map((chunk, idx) => ({\n  json: {\n    chatId,\n    replyToMessageId,\n    chunk: (idx === 0 ? `<b>${label}</b>\\n\\n` : '') +\n           (chunks.length > 1 ? `Part ${idx + 1}/${chunks.length}\\n\\n` : '') +\n           chunk +\n           (idx === chunks.length - 1 ? footer : ''),\n  }\n}));\n"
+      },
+      "id": "code-format-result",
+      "name": "Code: Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.chunk}}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "reply_to_message_id": "={{$json.replyToMessageId}}"
+        }
+      },
+      "id": "tg-send-research-result",
+      "name": "Telegram: Send Research Result",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1040,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "if-callback-c1",
+              "leftValue": "={{ $json.callbackQueryId || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-callback",
+      "name": "If: Callback?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $json.callbackQueryId }}",
+        "additionalFields": {}
+      },
+      "id": "tg-answer-callback",
+      "name": "Telegram: Answer Callback",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -420
+      ],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "if-last-chunk-c1",
+              "leftValue": "={{ $json.isLast }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-last-chunk",
+      "name": "If: Not Last Chunk?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        900,
+        -496
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.chunk}}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        },
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "🔍 Verify",
+                    "additionalFields": {
+                      "callback_data": "=verify:{{ $json.sessionId }}"
+                    }
+                  },
+                  {
+                    "text": "🗺️ Roadmap",
+                    "additionalFields": {
+                      "callback_data": "=roadmap:{{ $json.sessionId }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1120,
+        -316
+      ],
+      "id": "tg-reply-summary-buttons",
+      "name": "Telegram: Reply (summary + buttons)",
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      },
+      "notes": "Keep this node BELOW 'Telegram: Reply (summary)'. Execution order v1 runs sibling branches top-to-bottom by canvas position, so the plain parts (1..N-1) must sit above to be sent before this final part with the buttons.",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Trigger: Telegram": {
+      "main": [
+        [
+          {
+            "node": "Code: Extract URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Extract URL": {
+      "main": [
+        [
+          {
+            "node": "If: Callback?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If: URL Error?": {
+      "main": [
+        [
+          {
+            "node": "Telegram: URL Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Params: YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Params: YouTube": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Processing": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Fetch Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Fetch Transcript": {
+      "main": [
+        [
+          {
+            "node": "If: Transcript Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If: Transcript Error?": {
+      "main": [
+        [
+          {
+            "node": "Code: Transcript Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP: Fabric Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Transcript Error": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Transcript Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Fabric Chat": {
+      "main": [
+        [
+          {
+            "node": "Code: Parse SSE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Parse SSE": {
+      "main": [
+        [
+          {
+            "node": "Code: Chunk for Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Chunk for Telegram": {
+      "main": [
+        [
+          {
+            "node": "If: Not Last Chunk?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If: Research Command?": {
+      "main": [
+        [
+          {
+            "node": "Code: Resolve Session",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If: URL Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Resolve Session": {
+      "main": [
+        [
+          {
+            "node": "If: Resolve Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If: Resolve Error?": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Resolve Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: Ack Research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Ack Research": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Re-fetch Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Re-fetch Transcript": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Call yt-research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Call yt-research": {
+      "main": [
+        [
+          {
+            "node": "Code: Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Format Result": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send Research Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If: Callback?": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Answer Callback",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If: Research Command?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If: Research Command?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If: Not Last Chunk?": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Reply (summary)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: Reply (summary + buttons)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
